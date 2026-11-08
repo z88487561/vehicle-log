@@ -3,7 +3,7 @@
   "short_name": "油耗保養",
   "description": "記錄汽機車加油、保養與費用，自動計算平均油耗、每日與每公里費用。",
   "lang": "zh-Hant",
-  "id": "./?app=vehicle-log",
+  "id": "./",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
