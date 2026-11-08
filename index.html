@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>油耗保養紀錄</title>
+<meta name="description" content="記錄汽機車加油、保養與費用，自動計算平均油耗、每日與每公里費用。資料只存在本機。">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#0f1316">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><img src="icon.svg" alt="">油耗保養紀錄</div>
+  <select id="vehicleSel" aria-label="選擇車輛" hidden></select>
+</header>
+
+<main>
+  <section id="tab-overview" class="tab"></section>
+  <section id="tab-fuel" class="tab" hidden></section>
+  <section id="tab-expense" class="tab" hidden></section>
+  <section id="tab-data" class="tab" hidden></section>
+</main>
+
+<nav class="tabs" aria-label="主選單">
+  <button data-tab="overview" aria-selected="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a8 8 0 1 1 16 0"/><path d="M12 14l4-4"/><circle cx="12" cy="14" r="1.5"/><path d="M4 18h16"/></svg>總覽</button>
+  <button data-tab="fuel">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16"/><path d="M3 21h12"/><path d="M6 8h6"/><path d="M14 10h2a2 2 0 0 1 2 2v4a1.5 1.5 0 0 0 3 0V8l-3-3"/></svg>加油</button>
+  <button data-tab="expense">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3 17.8V21h3.2l6.3-6.3a4 4 0 0 0 5.2-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg>保養費用</button>
+  <button data-tab="data">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>車輛資料</button>
+</nav>
+
+<dialog id="dlg"><form id="dlgForm" novalidate></form></dialog>
+<dialog id="scanDlg">
+  <div class="scan-inner">
+    <div class="row"><b>掃描電子發票</b><span class="spacer"></span><button type="button" class="btn ghost" id="scanClose" aria-label="關閉">✕</button></div>
+    <div id="scanVideoWrap">
+      <video id="scanVideo" playsinline muted></video>
+      <div id="scanBanner" aria-hidden="true"><div id="scanBannerTitle"></div><div id="scanBannerText"></div></div>
+      <div id="scanBox" aria-hidden="true"><i></i></div>
+    </div>
+    <div id="scanCameraControls" class="row" hidden>
+      <button type="button" class="btn" id="scanTorch" aria-pressed="false" hidden>開啟補光</button>
+      <label id="scanZoomWrap" class="row small" hidden>縮放<input type="range" id="scanZoom" aria-label="相機縮放"></label>
+    </div>
+    <p id="scanStatus" role="status"></p>
+    <p class="muted small" style="margin:0">掃發票左側的 QR Code，會帶入日期、金額和公升數，不會上傳任何資料。QR 放大、光線充足、手穩住會比較快。</p>
+    <div class="row end">
+      <button type="button" class="btn" id="scanSkip" hidden>略過右側，直接帶入</button>
+      <button type="button" class="btn" id="scanCancel">關閉</button>
+    </div>
+  </div>
+</dialog>
+<div id="toast" popover="manual" role="status" aria-live="polite"></div>
+<input type="file" id="fileImport" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden>
+<input type="file" id="fileRestore" accept=".json,application/json" hidden>
+
+<script src="core.js"></script>
+<script src="scan.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

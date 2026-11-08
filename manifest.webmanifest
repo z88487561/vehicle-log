@@ -1,0 +1,18 @@
+{
+  "name": "油耗保養紀錄",
+  "short_name": "油耗保養",
+  "description": "記錄汽機車加油、保養與費用，自動計算平均油耗、每日與每公里費用。",
+  "lang": "zh-Hant",
+  "id": "./?app=vehicle-log",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f1316",
+  "theme_color": "#0f1316",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

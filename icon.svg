@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16343a"/>
+      <stop offset="1" stop-color="#0a1417"/>
+    </linearGradient>
+    <linearGradient id="arc" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f0a73a"/>
+      <stop offset=".55" stop-color="#3cc6a8"/>
+      <stop offset="1" stop-color="#2fb39a"/>
+    </linearGradient>
+    <linearGradient id="drop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5fe0c3"/>
+      <stop offset="1" stop-color="#1f9c84"/>
+    </linearGradient>
+  </defs>
+  <g id="content">
+    <rect id="base" width="512" height="512" rx="112" fill="url(#bg)"/>
+    <!-- 儀表弧 -->
+    <path d="M118 322 A150 150 0 1 1 394 322" fill="none" stroke="#ffffff" stroke-opacity=".10" stroke-width="34" stroke-linecap="round"/>
+    <path d="M118 322 A150 150 0 1 1 394 322" fill="none" stroke="url(#arc)" stroke-width="34" stroke-linecap="round" stroke-dasharray="560 1000"/>
+    <!-- 刻度 -->
+    <g stroke="#ffffff" stroke-opacity=".55" stroke-width="8" stroke-linecap="round">
+      <path d="M150 248 L170 256"/>
+      <path d="M256 136 L256 158"/>
+      <path d="M362 248 L342 256"/>
+    </g>
+    <!-- 指針 -->
+    <path d="M256 268 L338 196" stroke="#ffffff" stroke-width="14" stroke-linecap="round"/>
+    <circle cx="256" cy="268" r="24" fill="#ffffff"/>
+    <circle cx="256" cy="268" r="10" fill="#16343a"/>
+    <!-- 油滴 -->
+    <path d="M256 330 C256 330 214 378 214 404 A42 42 0 0 0 298 404 C298 378 256 330 256 330 Z" fill="url(#drop)"/>
+    <path d="M238 404 A18 18 0 0 0 252 422" fill="none" stroke="#ffffff" stroke-opacity=".7" stroke-width="7" stroke-linecap="round"/>
+  </g>
+</svg>
