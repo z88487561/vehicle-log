@@ -411,6 +411,15 @@
         <button class="btn primary" data-act="import">選擇檔案（.xlsx / .csv）</button>
       </div>
 
+      <div class="card"><h2>完整 CSV<small>全部車輛、加油、費用</small></h2>
+        <p class="muted small" style="margin-top:0">把所有車輛的紀錄放在同一個 CSV，可以傳給其他裝置，或用 Excel 開啟編輯。匯入時會<b>覆蓋</b>目前所有資料。</p>
+        <div class="row">
+          <button class="btn primary" data-act="csv-share" ${db.vehicles.length ? '' : 'disabled'}>分享完整 CSV</button>
+          <button class="btn" data-act="csv-download" ${db.vehicles.length ? '' : 'disabled'}>下載</button>
+          <button class="btn" data-act="csv-restore">匯入完整 CSV（覆蓋）</button>
+        </div>
+      </div>
+
       <div class="card"><h2>備份與匯出</h2>
         <p class="muted small" style="margin-top:0">資料只存在這台裝置的瀏覽器裡。清除瀏覽器資料或換手機前，請先匯出備份。</p>
         <div class="row">
@@ -499,6 +508,52 @@
       save(); render(); toast('已還原備份');
     } catch (e) { toast('還原失敗：' + e.message); }
   }
+  /* ---------- 完整 CSV：分享／下載／覆蓋匯入 ---------- */
+  const fullCsvName = () => `油耗保養紀錄完整-${VL.todayStr()}.csv`;
+  function downloadFullCsv() {
+    if (!db.vehicles.length) { toast('還沒有資料可以匯出'); return; }
+    download(fullCsvName(), VL.buildFullCsv(db), 'text/csv');
+  }
+  async function shareFullCsv() {
+    if (!db.vehicles.length) { toast('還沒有資料可以分享'); return; }
+    const csv = VL.buildFullCsv(db);
+    const file = new File([csv], fullCsvName(), { type: 'text/csv' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: '油耗保養紀錄完整 CSV' }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; /* 其他錯誤就改成下載 */ }
+    }
+    download(file.name, csv, 'text/csv');
+    toast('這個瀏覽器無法直接分享檔案，已改為下載');
+  }
+  async function handleFullCsv(file) {
+    let parsed;
+    try { parsed = VL.parseFullCsv(VL.decodeText(await file.arrayBuffer()), uid); }
+    catch (e) { toast(e.message || '讀取失敗'); return; }
+    if (!parsed.vehicles.length && !parsed.fuel.length && !parsed.expenses.length) { toast('檔案裡沒有可以匯入的資料'); return; }
+    const row = (label, a, b) => `<tr style="cursor:default"><td class="l">${label}</td><td>${a}</td><td>${b}</td></tr>`;
+    const body = `
+      <p style="margin-top:0">檔案：${esc(file.name)}</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th class="l"></th><th>目前</th><th>匯入後</th></tr></thead>
+        <tbody>${row('車輛', db.vehicles.length, parsed.vehicles.length)}${row('加油紀錄', db.fuel.length, parsed.fuel.length)}${row('費用紀錄', db.expenses.length, parsed.expenses.length)}</tbody>
+      </table></div>
+      <div class="hint" style="margin-top:12px"><span class="warn">⚠ 目前所有車輛與紀錄會被取代，無法復原。</span> 不確定的話，先按左下角下載目前的資料當備份。</div>
+      ${parsed.skipped ? `<div class="hint"><b>略過 ${parsed.skipped} 列：</b><br>${parsed.notes.slice(0, 8).map(esc).join('<br>')}${parsed.notes.length > 8 ? `<br>…還有 ${parsed.notes.length - 8} 列` : ''}</div>` : ''}`;
+    openDialog('匯入完整 CSV（覆蓋）', body, {
+      submitText: '覆蓋匯入',
+      extraLeft: db.vehicles.length ? '<button type="button" class="btn" data-act="csv-download">先下載目前資料</button>' : '',
+      onSubmit() {
+        const keep = cur();
+        const same = keep && parsed.vehicles.find(v => v.name === keep.name);
+        db = { ...emptyDb(), vehicles: parsed.vehicles, fuel: parsed.fuel, expenses: parsed.expenses,
+          settings: { current: (same || parsed.vehicles[0] || {}).id || null, includePurchase: db.settings.includePurchase } };
+        ui.fuelYear = ui.expYear = ui.expCat = 'all'; ui.tab = 'overview';
+        save(); render();
+        toast(`已覆蓋匯入：${parsed.vehicles.length} 台車、加油 ${parsed.fuel.length} 筆、費用 ${parsed.expenses.length} 筆`);
+      }
+    });
+  }
+
   function exportCsv() {
     const v = cur(); if (!v) return;
     const fr = VL.computeFuelRows(fuelOf(v.id)).rows;
@@ -535,6 +590,9 @@
       case 'backup': backup(); break;
       case 'restore': $('#fileRestore').click(); break;
       case 'csv': exportCsv(); break;
+      case 'csv-share': shareFullCsv(); break;
+      case 'csv-download': downloadFullCsv(); break;
+      case 'csv-restore': $('#fileFullCsv').click(); break;
       case 'wipe':
         if (confirm('確定清除所有車輛與紀錄？建議先匯出備份。') && confirm('真的要清除嗎？此動作無法復原。')) { db = emptyDb(); save(); render(); toast('已清除'); }
         break;
@@ -555,6 +613,7 @@
   });
   document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { ui.tab = b.dataset.tab; render(); window.scrollTo(0, 0); }));
   $('#fileImport').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) handleImportFile(f); });
+  $('#fileFullCsv').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) handleFullCsv(f); });
   $('#fileRestore').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) restore(f); });
 
   render();

@@ -487,11 +487,77 @@
     return '﻿' + rows.map(r => r.map(q).join(',')).join('\r\n');
   }
 
+
+  /* ---------------- 完整 CSV（車輛＋加油＋費用，單一檔案，可原樣還原） ---------------- */
+  const FULL_HEAD = ['類型', '車輛', '日期', '金額', '里程', '公升', '加滿', '分類', '發票', '備註', '車型', '車牌', '起算日', '起始里程'];
+
+  /** 匯出：第一欄「類型」為 車輛／加油／費用。同名車輛會在檔案裡自動加上 (2)、(3) 以免合併 */
+  function buildFullCsv(db) {
+    const used = new Set(), names = new Map();
+    db.vehicles.forEach(v => {
+      const base = v.name || '未命名車輛';
+      let n = base, i = 2;
+      while (used.has(n)) n = `${base}(${i++})`;
+      used.add(n); names.set(v.id, n);
+    });
+    const blank = (n) => Array(n).fill('');
+    const rows = [FULL_HEAD];
+    db.vehicles.forEach(v => rows.push(['車輛', names.get(v.id), '', '', '', '', '', '', '', v.note || '', v.type || '', v.plate || '', v.startDate || '', v.startOdo ?? '']));
+    db.fuel.filter(f => names.has(f.vid)).slice().sort(byDateOdo).forEach(f =>
+      rows.push(['加油', names.get(f.vid), f.date, f.amount, f.odo ?? '', f.liters ?? '', f.full === false ? '否' : '是', '', f.inv || '', f.note || '', ...blank(4)]));
+    db.expenses.filter(e => names.has(e.vid)).slice().sort(byDateOdo).forEach(e =>
+      rows.push(['費用', names.get(e.vid), e.date, e.amount, e.odo ?? '', '', '', e.category || '', '', e.note || '', ...blank(4)]));
+    return toCsv(rows);
+  }
+
+  /** 匯入：回傳 { vehicles, fuel, expenses, skipped, notes }。idGen 用來產生 id。
+   *  找不到對應車輛列的紀錄會自動建立該車輛，所以手動編輯過的檔案也能匯入 */
+  function parseFullCsv(text, idGen) {
+    let seq = 0;
+    const gen = idGen || (() => 'id' + ++seq);
+    const rows = parseCsv(text);
+    const hi = rows.findIndex(r => r.some(c => String(c).trim() === '類型'));
+    if (hi < 0) throw new Error('這不是「完整 CSV」（找不到「類型」欄）。一般的 Excel／CSV 請改用「匯入 Excel / CSV」');
+    const head = rows[hi].map(c => String(c).trim());
+    const idx = Object.fromEntries(FULL_HEAD.map(n => [n, head.indexOf(n)]));
+    const cell = (r, n) => (idx[n] < 0 ? '' : String(r[idx[n]] == null ? '' : r[idx[n]]).trim());
+    const vehicles = [], byName = new Map(), fuel = [], expenses = [], notes = [];
+    let skipped = 0;
+    const vehicleFor = name => {
+      const key = name || '未命名車輛';
+      if (!byName.has(key)) { const v = { id: gen(), name: key, type: '機車', plate: '', startDate: '', startOdo: null, note: '' }; byName.set(key, v); vehicles.push(v); }
+      return byName.get(key);
+    };
+    rows.slice(hi + 1).forEach((r, i) => {
+      if (!r.some(c => String(c).trim() !== '')) return;
+      const type = cell(r, '類型');
+      const line = hi + i + 2;
+      if (/^(車輛|vehicle)$/i.test(type)) {
+        const v = vehicleFor(cell(r, '車輛'));
+        v.type = cell(r, '車型') || v.type; v.plate = cell(r, '車牌'); v.note = cell(r, '備註');
+        v.startDate = toDate(cell(r, '起算日')) || ''; v.startOdo = toNum(cell(r, '起始里程'));
+      } else if (/^(加油|fuel)$/i.test(type)) {
+        const date = toDate(cell(r, '日期')), amount = toNum(cell(r, '金額')), liters = toNum(cell(r, '公升'));
+        if (!date || amount == null || !(liters > 0)) { skipped++; notes.push(`第 ${line} 列（加油）缺少日期、金額或公升，已略過`); return; }
+        const rec = { id: gen(), vid: vehicleFor(cell(r, '車輛')).id, date, amount, odo: toNum(cell(r, '里程')), liters, full: !/^(否|n|no|false|0|x)$/i.test(cell(r, '加滿')), note: cell(r, '備註') };
+        const inv = cell(r, '發票'); if (inv) rec.inv = inv;
+        fuel.push(rec);
+      } else if (/^(費用|expense)$/i.test(type)) {
+        const date = toDate(cell(r, '日期')), amount = toNum(cell(r, '金額'));
+        if (!date || amount == null) { skipped++; notes.push(`第 ${line} 列（費用）缺少日期或金額，已略過`); return; }
+        const note = cell(r, '備註');
+        expenses.push({ id: gen(), vid: vehicleFor(cell(r, '車輛')).id, date, amount, odo: toNum(cell(r, '里程')), category: cell(r, '分類') || guessCategory(note), note });
+      } else { skipped++; notes.push(`第 ${line} 列的類型「${type}」看不懂（要是 車輛／加油／費用），已略過`); }
+    });
+    return { vehicles, fuel, expenses, skipped, notes };
+  }
+
   G.VL = {
     round, ymd, todayStr, daysBetween, toDate, toNum,
     readFile, readXlsx, parseCsv, analyzeSheet, analyzeWorkbook,
     CATEGORIES, guessCategory, fuelKey, expKey,
     computeFuelRows, computeStats, toCsv, byDateOdo,
-    parseInvoiceQR, needsRightQR, fuelFromInvoice, invoiceItems
+    parseInvoiceQR, needsRightQR, fuelFromInvoice, invoiceItems,
+    buildFullCsv, parseFullCsv, decodeText
   };
 })(typeof window !== 'undefined' ? window : globalThis);
