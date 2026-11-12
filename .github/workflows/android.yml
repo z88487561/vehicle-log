@@ -1,0 +1,99 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'styles.css'
+      - '*.js'
+      - 'manifest.webmanifest'
+      - 'icon.svg'
+      - 'icons/**'
+      - 'android/**'
+      - 'scripts/**'
+      - 'package*.json'
+      - 'capacitor.config.json'
+      - '.github/workflows/android.yml'
+
+permissions:
+  contents: write   # 推 v* 標籤時要建立 Release 並附上 APK
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    env:
+      VERSION_CODE: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v4
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: 安裝相依套件並同步網頁到 Android 專案
+        run: |
+          npm ci
+          npm run build:web
+          npx cap sync android
+
+      - name: 讀取版本名稱
+        run: echo "VERSION_NAME=$(node -p "require('./package.json').version")" >> "$GITHUB_ENV"
+
+      - name: 還原簽章金鑰（有設定 secrets 才會簽 release）
+        id: keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KS_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KS_KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            {
+              echo "KEYSTORE_FILE=$RUNNER_TEMP/release.keystore"
+              echo "KEYSTORE_PASSWORD=$KS_PASS"
+              echo "KEY_ALIAS=$KS_ALIAS"
+              echo "KEY_PASSWORD=$KS_KEY_PASS"
+            } >> "$GITHUB_ENV"
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::沒有設定 ANDROID_KEYSTORE_BASE64，這次只會建 debug APK。debug 簽章每次都不同，之後的版本無法直接覆蓋安裝（要先解除安裝，記帳資料會消失）。請先照 ANDROID.md 設定簽章金鑰。"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 建置 APK
+        working-directory: android
+        run: |
+          chmod +x gradlew   # zip／Windows 常會弄丟可執行權限（exit code 126）
+          if [ "${{ steps.keystore.outputs.signed }}" = "true" ]; then
+            ./gradlew --no-daemon assembleRelease
+            cp app/build/outputs/apk/release/app-release.apk "../vehicle-log-${VERSION_NAME}-${VERSION_CODE}.apk"
+          else
+            ./gradlew --no-daemon assembleDebug
+            cp app/build/outputs/apk/debug/app-debug.apk "../vehicle-log-${VERSION_NAME}-${VERSION_CODE}-DEBUG-unstable-signature.apk"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vehicle-log-apk
+          path: vehicle-log-*.apk
+          retention-days: 90
+
+      - name: 建立 Release（推 v* 標籤時）
+        if: startsWith(github.ref, 'refs/tags/v') && steps.keystore.outputs.signed == 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: vehicle-log-*.apk
