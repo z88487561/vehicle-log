@@ -1,0 +1,8 @@
+{
+  "appId": "io.github.z88487561.vehiclelog",
+  "appName": "油耗保養",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  }
+}

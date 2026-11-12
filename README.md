@@ -36,6 +36,7 @@ https://z88487561.github.io/vehicle-log/
 | `core.js` | xlsx／csv 讀取、匯入對應、統計計算（不依賴 DOM） |
 | `scan.js` | 相機掃描發票 QR（BarcodeDetector + jsQR） |
 | `jsQR.js` | QR 解碼函式庫（複製自 einvoice-scanner） |
+| `backup.js` | 備份目標介面（瀏覽器：下載／分享；Android App：自動備份到「文件／VehicleLog」） |
 | `app.js` | 介面、表單、匯入、備份 |
 | `manifest.webmanifest`、`sw.js` | PWA 設定與離線快取 |
 | `icon.svg`、`icons/` | 圖示 |
@@ -43,3 +44,6 @@ https://z88487561.github.io/vehicle-log/
 除了 jsQR 之外沒有外部相依套件。資料存在 `localStorage` 的 `vehicle-log:v1`。
 
 更新程式後，記得把 `sw.js` 裡的 `vehicle-log-v3` 版本號加一，否則已安裝的裝置會一直使用舊的快取。
+
+
+Android App 的建置與備份說明見 [ANDROID.md](ANDROID.md)。

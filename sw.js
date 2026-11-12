@@ -1,5 +1,5 @@
-const C = 'vehicle-log-v3';
-const A = ['./', './index.html', './styles.css', './core.js', './scan.js', './jsQR.js', './app.js', './manifest.webmanifest', './icon.svg',
+const C = 'vehicle-log-v5';
+const A = ['./', './index.html', './styles.css', './core.js', './scan.js', './backup.js', './jsQR.js', './app.js', './manifest.webmanifest', './icon.svg',
   './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(C).then(c => c.addAll(A))); self.skipWaiting(); });
 self.addEventListener('activate', e => {

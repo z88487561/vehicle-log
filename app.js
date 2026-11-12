@@ -22,6 +22,31 @@
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(db)); }
     catch (e) { toast('儲存失敗：' + e.message); }
+    scheduleBackup();
+  }
+
+  /* ---------------- 自動備份（Android App：文件／VehicleLog） ---------------- */
+  const backupText = () => JSON.stringify({ app: 'vehicle-log', version: 1, exportedAt: new Date().toISOString(), data: db }, null, 1);
+  let bkTimer = null, bkPruneDay = null;
+  function scheduleBackup() {
+    if (!Backup.canAuto) return;
+    clearTimeout(bkTimer); bkTimer = setTimeout(runBackup, 1500);
+  }
+  async function runBackup() {
+    clearTimeout(bkTimer); bkTimer = null;
+    if (!Backup.canAuto || !db.vehicles.length) return;
+    const day = VL.todayStr();
+    const ok = await Backup.write(backupText(), day, bkPruneDay !== day);
+    if (ok) bkPruneDay = day;
+    renderBackupStatus();
+  }
+  function renderBackupStatus() {
+    const st = Backup.status(), b = $('#bkBanner');
+    if (b) {
+      b.hidden = !st.alert;
+      if (st.alert) b.innerHTML = `<span class="warn">⚠ ${esc(st.alert)}</span> <button class="btn" data-act="backup-share">分享備份</button>`;
+    }
+    const p = $('#bkStatus'); if (p) p.textContent = st.text;
   }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
@@ -67,12 +92,19 @@
   });
   dlg.addEventListener('click', e => { if (e.target === dlg) closeDialog(); });
 
+  /** 存成檔案：瀏覽器觸發下載；Android App 存進「文件／VehicleLog」（WebView 不支援 blob 下載） */
   function download(name, content, type) {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([content], { type }));
-    a.download = name;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    const p = Backup.download(new File([content], name, { type }));   // 瀏覽器版必須在點擊手勢內同步發動
+    if (Backup.kind === 'native') p.then(n => toast(n ? `已存到「${Backup.savedWhere}」：${n}` : '存檔失敗，請確認儲存權限'));
+  }
+  /** 分享檔案；環境不支援或分享失敗就改為下載／存檔 */
+  async function shareFile(file, title) {
+    try {
+      const r = await Backup.share(file, title);
+      if (r === 'shared' || r === 'cancel') return;
+    } catch (e) { /* 分享失敗：改為下載 */ }
+    download(file.name, file, file.type);
+    if (Backup.kind !== 'native') toast('這個瀏覽器無法直接分享檔案，已改為下載');
   }
   const val = (form, name) => { const el = form.elements[name]; return el ? el.value.trim() : ''; };
   const numOrNull = s => (s === '' ? null : VL.toNum(s));
@@ -92,6 +124,7 @@
     document.querySelectorAll('.tab').forEach(s => (s.hidden = s.id !== 'tab-' + ui.tab));
     const fn = { overview: renderOverview, fuel: renderFuel, expense: renderExpense, data: renderData }[ui.tab];
     $('#tab-' + ui.tab).innerHTML = fn();
+    renderBackupStatus();
   }
 
   const emptyState = () => `
@@ -421,9 +454,10 @@
       </div>
 
       <div class="card"><h2>備份與匯出</h2>
-        <p class="muted small" style="margin-top:0">資料只存在這台裝置的瀏覽器裡。清除瀏覽器資料或換手機前，請先匯出備份。</p>
+        <p class="muted small" id="bkStatus" style="margin-top:0">${esc(Backup.status().text)}</p>
         <div class="row">
           <button class="btn" data-act="backup">匯出完整備份（.json）</button>
+          <button class="btn" data-act="backup-share">分享備份</button>
           <button class="btn" data-act="restore">從備份還原</button>
           ${v ? `<button class="btn" data-act="csv">匯出「${esc(v.name)}」為 CSV</button>` : ''}
         </div>
@@ -494,9 +528,11 @@
   }
 
   /* ---------------- 備份 ---------------- */
-  function backup() {
-    const stamp = VL.todayStr();
-    download(`油耗保養紀錄備份-${stamp}.json`, JSON.stringify({ app: 'vehicle-log', version: 1, exportedAt: new Date().toISOString(), data: db }, null, 1), 'application/json');
+  const backupName = () => `油耗保養紀錄備份-${VL.todayStr()}.json`;
+  function backup() { download(backupName(), backupText(), 'application/json'); }
+  async function shareBackup() {
+    if (!db.vehicles.length) { toast('還沒有資料可以分享'); return; }
+    await shareFile(new File([backupText()], backupName(), { type: 'application/json' }), '油耗保養備份 JSON');
   }
   async function restore(file) {
     try {
@@ -517,13 +553,7 @@
   async function shareFullCsv() {
     if (!db.vehicles.length) { toast('還沒有資料可以分享'); return; }
     const csv = VL.buildFullCsv(db);
-    const file = new File([csv], fullCsvName(), { type: 'text/csv' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: '油耗保養紀錄完整 CSV' }); return; }
-      catch (e) { if (e && e.name === 'AbortError') return; /* 其他錯誤就改成下載 */ }
-    }
-    download(file.name, csv, 'text/csv');
-    toast('這個瀏覽器無法直接分享檔案，已改為下載');
+    await shareFile(new File([csv], fullCsvName(), { type: 'text/csv' }), '油耗保養紀錄完整 CSV');
   }
   async function handleFullCsv(file) {
     let parsed;
@@ -588,6 +618,7 @@
       case 'vehicle-del': deleteVehicle(id); break;
       case 'import': $('#fileImport').click(); break;
       case 'backup': backup(); break;
+      case 'backup-share': shareBackup(); break;
       case 'restore': $('#fileRestore').click(); break;
       case 'csv': exportCsv(); break;
       case 'csv-share': shareFullCsv(); break;
@@ -617,5 +648,7 @@
   $('#fileRestore').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) restore(f); });
 
   render();
-  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+  scheduleBackup();   // 啟動時備份一次，也能立刻發現寫入問題
+  document.addEventListener('visibilitychange', () => { if (document.hidden && bkTimer) runBackup(); });
+  if (!IS_NATIVE && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
