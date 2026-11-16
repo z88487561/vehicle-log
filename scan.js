@@ -27,7 +27,7 @@
   }
 
   async function prepareDecoder() {
-    if ('BarcodeDetector' in window && !st.detector) {
+    if (!window.IS_NATIVE && 'BarcodeDetector' in window && !st.detector) {   // App（WebView）內只用 jsQR，不用原生偵測
       try { if ((await BarcodeDetector.getSupportedFormats()).includes('qr_code')) st.detector = new BarcodeDetector({ formats: ['qr_code'] }); } catch (e) {}
     }
     await loadJsQR();
@@ -70,10 +70,12 @@
   }
 
   function prepareAudio() {
+    if (window.IS_NATIVE) return;
     if ('vibrate' in navigator) return;
     try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); if (audio.state === 'suspended') audio.resume(); } catch (e) {}
   }
   function feedback() {
+    if (window.IS_NATIVE) return;   // App（WebView）內不震動、不發聲，改用畫面上的提示橫幅
     if ('vibrate' in navigator) { navigator.vibrate(120); return; }
     if (!audio) return;
     try {
@@ -97,14 +99,27 @@
   const STAGE_KEY = 'vehicle-log:scanStage';
   const STAGE_LABELS = { open: '開啟相機', 'cam-ready': '相機運作中', left: '讀到左側 QR', finish: '結束掃描', stopped: '關閉相機之後', 'dlg-closed': '關閉掃描視窗之後', applying: '帶入表單' };
   const wait = ms => new Promise(r => setTimeout(r, ms));
-  const mark = stage => { try { localStorage.setItem(STAGE_KEY, stage + '@' + Date.now()); } catch (e) {} };
-  /** 回傳上次掃描中斷的說明（沒有中斷則回傳 null） */
-  function reportCrash() {
+  const trace = m => { if (window.IS_NATIVE) Backup.trace(m); };
+  const mark = stage => { trace(stage); try { localStorage.setItem(STAGE_KEY, stage + '@' + Date.now()); } catch (e) {} };
+  /** 回傳上次掃描中斷的說明（沒有中斷則回傳 null）。App 內以原生層寫的追蹤檔為準。 */
+  async function reportCrash() {
     try {
-      const v = localStorage.getItem(STAGE_KEY); if (!v) return null;
-      localStorage.removeItem(STAGE_KEY);
-      const stage = v.split('@')[0];
-      return STAGE_LABELS[stage] ? '上次掃描發票在「' + STAGE_LABELS[stage] + '」這一步中斷了' : null;
+      let label = '', trail = '';
+      if (window.IS_NATIVE) {
+        const lines = (await Backup.traceRead()).trim().split('\n').filter(Boolean);
+        const strip = l => l.replace(/^\d+ /, '');
+        const last = lines.length ? strip(lines[lines.length - 1]) : '';
+        localStorage.removeItem(STAGE_KEY);
+        if (lines.length < 2 || ['ok', 'user-close', 'reported'].includes(last)) return null;
+        trail = lines.slice(-6).map(strip).join(' → ');
+        Backup.trace('reported');
+      } else {
+        const v = localStorage.getItem(STAGE_KEY); if (!v) return null;
+        localStorage.removeItem(STAGE_KEY);
+        const stage = v.split('@')[0]; if (!STAGE_LABELS[stage]) return null;
+        label = STAGE_LABELS[stage];
+      }
+      return '上次掃描發票中斷了' + (label ? '（' + label + '）' : '') + (trail ? '。最後步驟：' + trail : '');
     } catch (e) { return null; }
   }
 
@@ -132,11 +147,14 @@
     const enc = st.left ? st.left.enc : null;
     let gotNew = false;
     codes.forEach(c => {
+      trace('parse');
       const r = VL.parseInvoiceQR(c, enc);
+      trace('parsed:' + (r ? r.kind : 'null'));
       if (!r) return;
       if (!st[r.kind]) { st[r.kind] = r; gotNew = true; if (r.kind === 'left') { st.leftAt = Date.now(); mark('left'); } }
     });
-    if (gotNew) feedback();
+    if (gotNew) { trace('feedback'); feedback(); }
+    trace('banner');
     const l = st.left;
     $('#scanSkip').hidden = !(l && !st.right && VL.needsRightQR(l));
     if (l) {
@@ -168,13 +186,16 @@
       if (st.detector) { try { (await st.detector.detect(v)).forEach(b => { if (b.rawValue) codes.push(b.rawValue); }); } catch (e) {} }
       const jsQR = window.jsQR || await loadJsQR().catch(() => null);
       if (jsQR) {
+        trace('jsqr');
         const img = ctx.getImageData(0, 0, cv.width, cv.height);
         const r = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+        trace(r ? 'jsqr:hit' : 'jsqr:none');
         if (r) codes.push(r);
       }
       if (session !== st.session || st.done) return;
       if (codes.length) {
         handle(codes);
+        trace('handled');
         const l = st.left;
         if (!l) return;
         const f = VL.fuelFromInvoice(l, st.right ? VL.invoiceItems(st.right.fields, l.enc) : []);
@@ -185,6 +206,7 @@
   }
 
   async function open(onDone) {
+    if (window.IS_NATIVE) await Backup.traceReset();
     mark('open');
     Object.assign(st, { left: null, right: null, leftAt: 0, busy: false, last: 0, done: false, session: st.session + 1, onDone });
     $('#scanCameraControls').hidden = true; $('#scanSkip').hidden = true; hideBanner();

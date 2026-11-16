@@ -100,6 +100,16 @@
       if (doPrune) { try { await prune(); } catch (e) {} }
       return true;
     },
+    // ---- 掃描追蹤：每一步都立刻交給原生層寫入檔案，即使 WebView 渲染程序當機也不會遺失 ----
+    trace(msg) {
+      try { getPlugins().Filesystem.appendFile({ path: DIR + '/scan-trace.log', directory: 'DOCUMENTS', data: (Date.now() % 1e6) + ' ' + msg + '\n', encoding: 'utf8' }).catch(() => {}); } catch (e) {}
+    },
+    async traceReset() {
+      try { await getPlugins().Filesystem.writeFile({ path: DIR + '/scan-trace.log', directory: 'DOCUMENTS', data: '0 --- 開始 ---\n', encoding: 'utf8', recursive: true }); } catch (e) {}
+    },
+    async traceRead() {
+      try { return (await getPlugins().Filesystem.readFile({ path: DIR + '/scan-trace.log', directory: 'DOCUMENTS', encoding: 'utf8' })).data || ''; } catch (e) { return ''; }
+    },
     async share(file, title) {
       const { Filesystem, Share } = getPlugins();
       if (!(await Share.canShare()).value) return false;
