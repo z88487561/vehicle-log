@@ -93,15 +93,39 @@
     $('#scanVideo').srcObject = null;
   }
 
-  function finish(withRight = true) {
+  /* 掃描步驟紀錄：萬一 App 在掃描途中被系統關掉，下次開啟時就知道停在哪一步 */
+  const STAGE_KEY = 'vehicle-log:scanStage';
+  const STAGE_LABELS = { open: '開啟相機', 'cam-ready': '相機運作中', left: '讀到左側 QR', finish: '結束掃描', stopped: '關閉相機之後', 'dlg-closed': '關閉掃描視窗之後', applying: '帶入表單' };
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const mark = stage => { try { localStorage.setItem(STAGE_KEY, stage + '@' + Date.now()); } catch (e) {} };
+  /** 回傳上次掃描中斷的說明（沒有中斷則回傳 null） */
+  function reportCrash() {
+    try {
+      const v = localStorage.getItem(STAGE_KEY); if (!v) return null;
+      localStorage.removeItem(STAGE_KEY);
+      const stage = v.split('@')[0];
+      return STAGE_LABELS[stage] ? '上次掃描發票在「' + STAGE_LABELS[stage] + '」這一步中斷了' : null;
+    } catch (e) { return null; }
+  }
+
+  async function finish(withRight = true) {
     if (st.done || !st.left) return;
     st.done = true;
     const extra = withRight && st.right ? VL.invoiceItems(st.right.fields, st.left.enc) : [];
     const result = VL.fuelFromInvoice(st.left, extra);
     const cb = st.onDone;
+    // 先讓相機完全釋放，再分開幾個步驟關視窗、帶入表單。
+    // Android WebView 在同一瞬間連續做這幾件事時，渲染程序曾經崩潰（App 被直接關掉）。
+    mark('finish');
     stop();
+    mark('stopped');
+    await wait(350);
     dlg.close();
-    if (cb) cb(result);
+    mark('dlg-closed');
+    await wait(250);
+    mark('applying');
+    try { if (cb) cb(result); } catch (e) { console.error('scan', e); }
+    mark('ok');
   }
 
   function handle(codes) {
@@ -110,7 +134,7 @@
     codes.forEach(c => {
       const r = VL.parseInvoiceQR(c, enc);
       if (!r) return;
-      if (!st[r.kind]) { st[r.kind] = r; gotNew = true; if (r.kind === 'left') st.leftAt = Date.now(); }
+      if (!st[r.kind]) { st[r.kind] = r; gotNew = true; if (r.kind === 'left') { st.leftAt = Date.now(); mark('left'); } }
     });
     if (gotNew) feedback();
     const l = st.left;
@@ -161,6 +185,7 @@
   }
 
   async function open(onDone) {
+    mark('open');
     Object.assign(st, { left: null, right: null, leftAt: 0, busy: false, last: 0, done: false, session: st.session + 1, onDone });
     $('#scanCameraControls').hidden = true; $('#scanSkip').hidden = true; hideBanner();
     prepareAudio();
@@ -177,6 +202,7 @@
       await prepareDecoder();
       status('請把發票左側的 QR Code 放進框內（一次只掃一個）');
       st.raf = requestAnimationFrame(loop);
+      mark('cam-ready');
     } catch (e) {
       console.error('scan', e);
       stop();
@@ -189,7 +215,7 @@
 
   $('#scanClose').onclick = $('#scanCancel').onclick = () => dlg.close();
   $('#scanSkip').onclick = () => finish(false);
-  dlg.addEventListener('close', () => { st.session++; st.done = true; stop(); });
+  dlg.addEventListener('close', () => { if (!st.done) mark('user-close'); st.session++; st.done = true; stop(); });
   $('#scanTorch').onclick = async () => {
     const track = st.stream && st.stream.getVideoTracks()[0]; if (!track) return;
     const on = $('#scanTorch').getAttribute('aria-pressed') !== 'true';
@@ -201,5 +227,5 @@
     try { await track.applyConstraints({ advanced: [{ zoom: Number(e.target.value) }] }); } catch (err) {}
   };
 
-  window.VLScan = { open };
+  window.VLScan = { open, reportCrash };
 })();
