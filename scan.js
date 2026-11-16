@@ -70,12 +70,10 @@
   }
 
   function prepareAudio() {
-    if (window.IS_NATIVE) return;
     if ('vibrate' in navigator) return;
     try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); if (audio.state === 'suspended') audio.resume(); } catch (e) {}
   }
   function feedback() {
-    if (window.IS_NATIVE) return;   // App（WebView）內不震動、不發聲，改用畫面上的提示橫幅
     if ('vibrate' in navigator) { navigator.vibrate(120); return; }
     if (!audio) return;
     try {
@@ -95,33 +93,7 @@
     $('#scanVideo').srcObject = null;
   }
 
-  /* 掃描步驟紀錄：萬一 App 在掃描途中被系統關掉，下次開啟時就知道停在哪一步 */
-  const STAGE_KEY = 'vehicle-log:scanStage';
-  const STAGE_LABELS = { open: '開啟相機', 'cam-ready': '相機運作中', left: '讀到左側 QR', finish: '結束掃描', stopped: '關閉相機之後', 'dlg-closed': '關閉掃描視窗之後', applying: '帶入表單' };
   const wait = ms => new Promise(r => setTimeout(r, ms));
-  const trace = m => { if (window.IS_NATIVE) Backup.trace(m); };
-  const mark = stage => { trace(stage); try { localStorage.setItem(STAGE_KEY, stage + '@' + Date.now()); } catch (e) {} };
-  /** 回傳上次掃描中斷的說明（沒有中斷則回傳 null）。App 內以原生層寫的追蹤檔為準。 */
-  async function reportCrash() {
-    try {
-      let label = '', trail = '';
-      if (window.IS_NATIVE) {
-        const lines = (await Backup.traceRead()).trim().split('\n').filter(Boolean);
-        const strip = l => l.replace(/^\d+ /, '');
-        const last = lines.length ? strip(lines[lines.length - 1]) : '';
-        localStorage.removeItem(STAGE_KEY);
-        if (lines.length < 2 || ['ok', 'user-close', 'reported'].includes(last)) return null;
-        trail = lines.slice(-6).map(strip).join(' → ');
-        Backup.trace('reported');
-      } else {
-        const v = localStorage.getItem(STAGE_KEY); if (!v) return null;
-        localStorage.removeItem(STAGE_KEY);
-        const stage = v.split('@')[0]; if (!STAGE_LABELS[stage]) return null;
-        label = STAGE_LABELS[stage];
-      }
-      return '上次掃描發票中斷了' + (label ? '（' + label + '）' : '') + (trail ? '。最後步驟：' + trail : '');
-    } catch (e) { return null; }
-  }
 
   async function finish(withRight = true) {
     if (st.done || !st.left) return;
@@ -129,32 +101,23 @@
     const extra = withRight && st.right ? VL.invoiceItems(st.right.fields, st.left.enc) : [];
     const result = VL.fuelFromInvoice(st.left, extra);
     const cb = st.onDone;
-    // 先讓相機完全釋放，再分開幾個步驟關視窗、帶入表單。
-    // Android WebView 在同一瞬間連續做這幾件事時，渲染程序曾經崩潰（App 被直接關掉）。
-    mark('finish');
+    // 先讓相機完全釋放，再分開幾個步驟關視窗、帶入表單（保守作法，Android App 上驗證過可正常運作）
     stop();
-    mark('stopped');
     await wait(350);
     dlg.close();
-    mark('dlg-closed');
     await wait(250);
-    mark('applying');
     try { if (cb) cb(result); } catch (e) { console.error('scan', e); }
-    mark('ok');
   }
 
   function handle(codes) {
     const enc = st.left ? st.left.enc : null;
     let gotNew = false;
     codes.forEach(c => {
-      trace('parse');
       const r = VL.parseInvoiceQR(c, enc);
-      trace('parsed:' + (r ? r.kind : 'null'));
       if (!r) return;
-      if (!st[r.kind]) { st[r.kind] = r; gotNew = true; if (r.kind === 'left') { st.leftAt = Date.now(); mark('left'); } }
+      if (!st[r.kind]) { st[r.kind] = r; gotNew = true; if (r.kind === 'left') st.leftAt = Date.now(); }
     });
-    if (gotNew) { trace('feedback'); feedback(); }
-    trace('banner');
+    if (gotNew) feedback();
     const l = st.left;
     $('#scanSkip').hidden = !(l && !st.right && VL.needsRightQR(l));
     if (l) {
@@ -186,16 +149,13 @@
       if (st.detector) { try { (await st.detector.detect(v)).forEach(b => { if (b.rawValue) codes.push(b.rawValue); }); } catch (e) {} }
       const jsQR = window.jsQR || await loadJsQR().catch(() => null);
       if (jsQR) {
-        trace('jsqr');
         const img = ctx.getImageData(0, 0, cv.width, cv.height);
         const r = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
-        trace(r ? 'jsqr:hit' : 'jsqr:none');
         if (r) codes.push(r);
       }
       if (session !== st.session || st.done) return;
       if (codes.length) {
         handle(codes);
-        trace('handled');
         const l = st.left;
         if (!l) return;
         const f = VL.fuelFromInvoice(l, st.right ? VL.invoiceItems(st.right.fields, l.enc) : []);
@@ -206,8 +166,6 @@
   }
 
   async function open(onDone) {
-    if (window.IS_NATIVE) await Backup.traceReset();
-    mark('open');
     Object.assign(st, { left: null, right: null, leftAt: 0, busy: false, last: 0, done: false, session: st.session + 1, onDone });
     $('#scanCameraControls').hidden = true; $('#scanSkip').hidden = true; hideBanner();
     prepareAudio();
@@ -224,7 +182,6 @@
       await prepareDecoder();
       status('請把發票左側的 QR Code 放進框內（一次只掃一個）');
       st.raf = requestAnimationFrame(loop);
-      mark('cam-ready');
     } catch (e) {
       console.error('scan', e);
       stop();
@@ -237,7 +194,7 @@
 
   $('#scanClose').onclick = $('#scanCancel').onclick = () => dlg.close();
   $('#scanSkip').onclick = () => finish(false);
-  dlg.addEventListener('close', () => { if (!st.done) mark('user-close'); st.session++; st.done = true; stop(); });
+  dlg.addEventListener('close', () => { st.session++; st.done = true; stop(); });
   $('#scanTorch').onclick = async () => {
     const track = st.stream && st.stream.getVideoTracks()[0]; if (!track) return;
     const on = $('#scanTorch').getAttribute('aria-pressed') !== 'true';
@@ -249,5 +206,5 @@
     try { await track.applyConstraints({ advanced: [{ zoom: Number(e.target.value) }] }); } catch (err) {}
   };
 
-  window.VLScan = { open, reportCrash };
+  window.VLScan = { open };
 })();

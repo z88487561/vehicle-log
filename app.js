@@ -648,7 +648,6 @@
   $('#fileRestore').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) restore(f); });
 
   render();
-  if (window.VLScan && VLScan.reportCrash) Promise.resolve(VLScan.reportCrash()).then(m => { if (m) setTimeout(() => toast(m, 14000), 900); });   // 上次掃描若中途被關掉，提示最後做到哪一步
   scheduleBackup();   // 啟動時備份一次，也能立刻發現寫入問題
   document.addEventListener('visibilitychange', () => { if (document.hidden && bkTimer) runBackup(); });
   if (!IS_NATIVE && 'serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
